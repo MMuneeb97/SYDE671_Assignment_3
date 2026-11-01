@@ -27,9 +27,9 @@
             <!-- SECTION 1: INTRODUCTION TO CONVOLUTION -->
             <div class="section-block">
                 <h2 class="section-title">Section 1: Homographies, Warping and Mosaicing</h2>
-                <p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. We have chosen fe different pairs of images
-                to implement warping on. The first set is the classicl chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
-                The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. We will discuss why the pictures that I took in the park were not good images to
+                <p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. I have chosen few different pairs of images
+                to implement warping on. The first set is the classical chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
+                The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. I will discuss why the pictures that I took in the park were not good images to
                 implement image warping on and why the chessboard example works better.</p>
                 <p class="section-desc">Let's begin by first looking at the code and how we calculated the homographies and implemented warping.</p>
                 <div class="code-block-container">
@@ -266,8 +266,8 @@
                         plt.show()
             </code></pre>
         </div>
-                <p class="section-desc">I start by importing the images and converting the from the default BGR formate to RGB format.
-                After loadin the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
+                <p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
+                After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
                 arrays in my code.</p
                 <p class="section-desc">The computeH function calculates the homography matrix taking the cordinate arrays as the input.
                 The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
