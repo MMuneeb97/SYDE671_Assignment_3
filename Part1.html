@@ -21,175 +21,360 @@
     <main>
         <div class="card">
             <h1 style="text-align: center;">SYDE 671 Assignment 3 Review</h1>
-            <p>In this blog we will be reviewing the concepts from assignment 3. Starting off at the basics, we will first review the concept of convolution and look at a few different methods to implement a convolution. 
-We then look at combining two different transitioning images based on your viewing distance from the image. Lastly, we will discuss image blending and the oraple theory.
+            <p>In this blog we will be reviewing the concepts from assignment 3. Assignment 3 focuses on image blending and stitiching multiple photographs to create one larger composite photograph. 
  </p>
             
             <!-- SECTION 1: INTRODUCTION TO CONVOLUTION -->
             <div class="section-block">
-                <h2 class="section-title">Section 1: Convolution & Implementation Methods</h2>
-                <p class="section-desc">Let’s begin by first discussing what a convolution is and look at different ways to implement and how each method effects the processing time and results.
-Convolution is a way to scan every pixel in an image and extract useful information from it or transform its features to make them more meaningful. Convolution uses a kernel or a filter to process pixels in the context of its neighboring pixels. </p>
-                <p class="section-desc">The most fundamental way to implement a convolution is by using array functions and for loops. This method helps new users to understand how convolution works. Having this understanding is crucial to further perform useful image processing operations using filters and convolution.</p>
+                <h2 class="section-title">Section 1: Homographies, Warping and Mosaicing</h2>
+                <p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. We have chosen fe different pairs of images
+                to implement warping on. The first set is the classicl chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
+                The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. We will discuss why the pictures that I took in the park were not good images to
+                implement image warping on and why the chessboard example works better.</p>
+                <p class="section-desc">Let's begin by first looking at the code and how we calculated the homographies and implemented warping.</p>
                 <div class="code-block-container">
                     <pre><code>
-                        #part 1.1: Convolution with 4 for loops
                         import numpy as np
-                        import matplotlib.pyplot as plt
                         import cv2
+                        import matplotlib.pyplot as plt
                         
-                        img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                        img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\left01.jpg")
+                        img2 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\chessboard.png")
                         
-                        kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-
-                        def convolve_with_4forloops(img, kernel):
-                            kernel_h, kernel_w = kernel.shape
-                            img_h, img_w = img.shape
+                        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+                        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
                         
-                            pad_h = kernel_h // 2
-                            pad_w = kernel_w // 2
+                        pts1 = np.array([[243, 65], [512, 53], [509, 296], [250, 281]], dtype=np.float64)
+                        pts2 = np.array([[220, 108],[1403, 106],[1402, 1131],[81, 1132]], dtype=np.float64)
                         
-                            padded_img = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode = 'constant', constant_values = 0)
+                        def computeH(im1_pts, im2_pts):
+                            n = im1_pts.shape[0]
+                            if n < 4:
+                                raise ValueError("At least 4 point correspondences are required.")
+                            
+                            A = []
+                            for i in range(n):
+                                x, y = im1_pts[i, 0], im1_pts[i, 1]
+                                xp, yp = im2_pts[i, 0], im2_pts[i, 1]
+                                
+                                row1 = [-x, -y, -1,  0,  0,  0,  x * xp,  y * xp,  xp]
+                                row2 = [ 0,  0,  0, -x, -y, -1,  x * yp,  y * yp,  yp]
+                                
+                                A.append(row1)
+                                A.append(row2)
+                                
+                            A = np.array(A, dtype=np.float64)
+                            
+                            _, _, Vt = np.linalg.svd(A)
+                            h = Vt[-1, :]
+                            
+                            H = h.reshape(3, 3)
+                            if H[2, 2] != 0:
+                                H = H / H[2, 2]
+                                
+                            return H
                         
-                            flip_kernel = np.flip(np.flip(kernel, axis = 0), axis = 1)
+                        def visualize_correspondences(img1, img2, im1_pts, im2_pts):
+                           
+                            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+                            
+                            axes[0].imshow(img1)
+                            axes[0].scatter(im1_pts[:, 0], im1_pts[:, 1], c='red', s=40, marker='o')
+                            axes[0].set_title("Source Image (im1_pts)")
+                            axes[0].axis('off')
+                            
+                            axes[1].imshow(img2)
+                            axes[1].scatter(im2_pts[:, 0], im2_pts[:, 1], c='blue', s=40, marker='x')
+                            axes[1].set_title("Destination Image (im2_pts)")
+                            axes[1].axis('off')
+                            
+                            plt.tight_layout()
+                            plt.show()
                         
-                            output = np.zeros_like(img, dtype=np.float32)
+                        def get_bounding_box(im_shape, H):
+                            """
+                            Predicts the bounding box of the warped image with safety clamps 
+                            to prevent runaway memory errors.
+                            """
+                            h, w = im_shape[:2]
+                            corners = np.array([
+                                [0, 0, 1],
+                                [w - 1, 0, 1],
+                                [w - 1, h - 1, 1],
+                                [0, h - 1, 1]
+                            ]).T  # Shape: (3, 4)
                         
-                            for i in range(img_h):
-                                for j in range(img_w):
-                                    pixel_sum = 0.0
+                            transformed_corners = H @ corners
                         
-                                    for k in range(kernel_h):
-                                        for l in range(kernel_w):
-                                            img_val = padded_img[i + k, j + l]
-                                            kernel_val = flip_kernel[k, l]
-                                            pixel_sum += img_val * kernel_val
+                            z_vals = transformed_corners[2, :]
+                            z_vals[np.abs(z_vals) < 1e-5] = 1e-5
+                            transformed_corners /= z_vals
+                            
+                            x_coords = transformed_corners[0, :]
+                            y_coords = transformed_corners[1, :]
+                            
+                            all_x = np.append(x_coords, [0, w])
+                            all_y = np.append(y_coords, [0, h])
+                            
+                            x_min = max(int(np.floor(all_x.min())), -2 * w)
+                            x_max = min(int(np.ceil(all_x.max())), 3 * w)
+                            y_min = max(int(np.floor(all_y.min())), -2 * h)
+                            y_max = min(int(np.ceil(all_y.max())), 3 * h)
+                            
+                            return x_min, x_max, y_min, y_max
                         
-                                    output[i, j] = pixel_sum
+                        
+                        def warpImageNearestNeighbor(im, H):
+                            """
+                            Warps image im using homography H with Nearest Neighbor interpolation (inverse warping).
+                            """
+                            h, w = im.shape[:2]
+                            channels = im.shape[2] if len(im.shape) == 3 else 1
+                            
+                            x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
+                            out_w = x_max - x_min + 1
+                            out_h = y_max - y_min + 1
+                            
+                            x_indices = np.arange(x_min, x_max + 1)
+                            y_indices = np.arange(y_min, y_max + 1)
+                            X_out, Y_out = np.meshgrid(x_indices, y_indices)
+                            
+                            num_pixels = out_w * out_h
+                            ones = np.ones((1, num_pixels))
+                            coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
+                        
+                            H_inv = np.linalg.inv(H)
+                            coords_src = H_inv @ coords_out
+                            coords_src /= coords_src[2, :]  
+                            
+                            X_src = coords_src[0, :].reshape((out_h, out_w))
+                            Y_src = coords_src[1, :].reshape((out_h, out_w))
+                            
+                            X_nn = np.round(X_src).astype(np.int64)
+                            Y_nn = np.round(Y_src).astype(np.int64)
+                            
+                            valid_mask = (X_nn >= 0) & (X_nn < w) & (Y_nn >= 0) & (Y_nn < h)
+                            
+                            X_nn_clamped = np.clip(X_nn, 0, w - 1)
+                            Y_nn_clamped = np.clip(Y_nn, 0, h - 1)
+                            
+                            if channels > 1:
+                                im_warped = np.zeros((out_h, out_w, channels), dtype=im.dtype)
+                                alpha_mask = np.zeros((out_h, out_w), dtype=np.float64)
+                                for c in range(channels):
+                                    channel_data = im[:, :, c]
+                                    sampled = channel_data[Y_nn_clamped, X_nn_clamped]
+                                    sampled[~valid_mask] = 0
+                                    im_warped[:, :, c] = sampled
+                            else:
+                                im_warped = im[Y_nn_clamped, X_nn_clamped]
+                                im_warped[~valid_mask] = 0
+                                im_warped = im_warped.reshape((out_h, out_w))
+                                
+                            alpha_mask = valid_mask.astype(np.float64)
+                            
+                            return im_warped, alpha_mask
+                        
+                        
+                        def warpImageBilinear(im, H):
+                            """
+                            Warps image im using homography H with Bilinear interpolation (inverse warping).
+                            """
+                            h, w = im.shape[:2]
+                            channels = im.shape[2] if len(im.shape) == 3 else 1
+                            
+                            x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
+                            out_w = x_max - x_min + 1
+                            out_h = y_max - y_min + 1
+                            
+                            x_indices = np.arange(x_min, x_max + 1)
+                            y_indices = np.arange(y_min, y_max + 1)
+                            X_out, Y_out = np.meshgrid(x_indices, y_indices)
+                            
+                            num_pixels = out_w * out_h
+                            ones = np.ones((1, num_pixels))
+                            coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
+                            
+                            H_inv = np.linalg.inv(H)
+                            coords_src = H_inv @ coords_out
+                            coords_src /= coords_src[2, :]
+                            
+                            X_src = coords_src[0, :].reshape((out_h, out_w))
+                            Y_src = coords_src[1, :].reshape((out_h, out_w))
+                            
+                            x0 = np.floor(X_src).astype(np.int64)
+                            x1 = x0 + 1
+                            y0 = np.floor(Y_src).astype(np.int64)
+                            y1 = y0 + 1
+                            
+                            wa = (x1 - X_src) * (y1 - Y_src)
+                            wb = (X_src - x0) * (y1 - Y_src)
+                            wc = (x1 - X_src) * (Y_src - y0)
+                            wd = (X_src - x0) * (Y_src - y0)
+                        
+                            valid_mask = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
+                         
+                            x0_c = np.clip(x0, 0, w - 1)
+                            x1_c = np.clip(x1, 0, w - 1)
+                            y0_c = np.clip(y0, 0, h - 1)
+                            y1_c = np.clip(y1, 0, h - 1)
+                            
+                            if channels > 1:
+                                im_warped = np.zeros((out_h, out_w, channels), dtype=np.float64)
+                                for c in range(channels):
+                                    channel_data = im[:, :, c].astype(np.float64)
+                                    Ia = channel_data[y0_c, x0_c]
+                                    Ib = channel_data[y0_c, x1_c]
+                                    Ic = channel_data[y1_c, x0_c]
+                                    Id = channel_data[y1_c, x1_c]
                                     
-                            return output
+                                    interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
+                                    interpolated[~valid_mask] = 0
+                                    im_warped[:, :, c] = interpolated
+                                im_warped = np.clip(im_warped, 0, 255).astype(im.dtype)
+                            else:
+                                channel_data = im.astype(np.float64)
+                                Ia = channel_data[y0_c, x0_c]
+                                Ib = channel_data[y0_c, x1_c]
+                                Ic = channel_data[y1_c, x0_c]
+                                Id = channel_data[y1_c, x1_c]
+                                
+                                interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
+                                interpolated[~valid_mask] = 0
+                                im_warped = np.clip(interpolated, 0, 255).astype(im.dtype)
+                                
+                            alpha_mask = valid_mask.astype(np.float64)
+                            
+                            return im_warped, alpha_mask
+                            
+                        visualize_correspondences(img1, img2, pts1, pts2)
                         
-                        result = convolve_with_4forloops(img, kernel)
-                        plt.figure(figsize=(10,5))
-
-                        plt.subplot(1, 2, 1)
-                        plt.title('Original Greyscale')
-                        plt.imshow(img, cmap = 'gray')
-                        plt.axis('off')
+                        im_warped, alpha = warpImageBilinear(img1, H_recovered)
+                        im_warped_nn, alpha_nn = warpImageNearestNeighbor(img1, H_recovered)
                         
-                        plt.subplot(1, 2, 2)
-                        plt.title('Filtered (Blurred)')
-                        plt.imshow(result, cmap='gray')
-                        plt.axis('off')
+                        fig, axes = plt.subplots(1, 2, figsize=(14, 7))
                         
+                        axes[0].imshow(im_warped_nn)
+                        axes[0].set_title("Nearest Neighbor Interpolation")
+                        axes[0].axis('off')
+                        
+                        axes[1].imshow(im_warped)
+                        axes[1].set_title("Bilinear Interpolation")
+                        axes[1].axis('off')
+                        
+                        plt.tight_layout()
                         plt.show()
-                    </code></pre>
-                </div>
-                <p class="section-desc">After loading in the required libraries, NumPy to use array functions and matplotlib to plot our images we load in the image and convert it from color to grayscale. Once the image is loaded, we define our kernel; a 9x9 matrix of ones. This is a box filter that will reduce the sharpness and make it smooth. Simply put it makes the image blurred. Next we define our convolution function, we start by padding the image all around with zeros to make sure that the edge features don’t get deleted during the convolution operations as the kernel moves across the image.
-                Next, we define our four nested for loops. The outer loops iterate over the image size (height and width) and the inner loops iterate over the kernel size and perform the dot product over a size of the image equal to the kernel size across the entire image. The results of the convolution are stored in an array and returned at the function call.
-                Below are the results of the convolution performed with the above code.   
-                </p>
+            </code></pre>
+        </div>
+                <p class="section-desc">I start by importing the images and converting the from the default BGR formate to RGB format.
+                After loadin the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
+                arrays in my code.</p
+                <p class="section-desc">The computeH function calculates the homography matrix taking the cordinate arrays as the input.
+                The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
+                coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
+                to create matrix A of size 2N X 9. Where each point correspondence contributes to two rows of linear equations representing
+                Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
+                least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
+                a 3 x 3 matrix format and scales it by its bottom-right element such that magnitude of H equals 1, before returning the final
+                homography matrix.</p>
                 
                 <div class="image-grid">
                     <div class="image-card">
-                        <img src="blog _pics\img2.png" alt="img1">
+                        <img src="images\warped chessboard.PNG" alt="img1">
                     </div>
                 </div>
-                <p class="section-desc">As expected, the processed image has lost its sharpness, especially around the edges and any thin fine features such the rim of the glasses, the letters on the shirt and hair. Overall, the details and features of the original image are still discernable in the processed image.
-                Next, we will slightly optimize the code to use less processing time and process larger images more efficiently. While using four for loops was an effective way to explain the underlying principle it increases the number of calculations and slows down the processing especially when dealing with larger images or more involved filters. The following code uses only two for loops instead of four to achieve the same effect as before.
-                </p>    
-
-                <div class="code-block-container">
-                    <pre><code>
-                        #part 1.1: Convolution with 2 for loops
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
+                <p class="section-desc"></p>    
                         
-                        img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        
-                        kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-                        
-                        def convolve_with_2forloops(img, kernel):
-                            kernel_h, kernel_w = kernel.shape
-                            img_h, img_w = img.shape
-                        
-                            pad_h = kernel_h // 2
-                            pad_w = kernel_w // 2
-                        
-                            padded_img = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode = 'constant', constant_values = 0)
-                        
-                            flip_kernel = np.flip(np.flip(kernel, axis = 0), axis = 1)
-                        
-                            output = np.zeros_like(img, dtype=np.float32)
-                        
-                            for i in range(img_h):
-                                for j in range(img_w):
-                                    roi = padded_img[i : i + kernel_h, j : j + kernel_w]
-                                    output[i, j] = np.sum(roi * flip_kernel)
-                                    
-                            return output
-                        
-                        result = convolve_with_2forloops(img, kernel)
-                        plt.figure(figsize=(10,5))
-                        
-                        plt.subplot(1, 2, 1)
-                        plt.title('Original Greyscale')
-                        plt.imshow(img, cmap = 'gray')
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 2, 2)
-                        plt.title('Filtered (Blurred)')
-                        plt.imshow(result, cmap='gray')
-                        plt.axis('off')
-                        
-                        plt.show()
-                    </code></pre>
-                </div>
-                <p class="section-desc">This time we used two for loops instead of four. Instead of iterating over the entire image, 
-                    this time around we pick a region of interest matching the size of our kernel, perform the convolution calculation and 
-                    then slide our region of interest one column to the right and repeat for the entire image. Below is the result of this code and 
-                    you can see the results are identical however the processing time is significantly reduced and larger images can be processed more effeciently with this code.   
-                </p>
-                
-                <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img4.png" alt="img4">
-                    </div>
-                </div>
-             </div>
-            <p class="section-desc">Next, we take things up a notch and streamline the code even further. We will use the built in convolution function from the SciPy python library this time as it is optimized to perform large calculations very efficiently. </p>    
-                <div class="code-block-container">
-                    <pre><code>
-                        #part 1.1: Convolution with scipy
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
-                        from scipy.signal import convolve2d
-                        
-                        img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        
-                        kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-                        
-                        result = convolve2d(img, kernel)
-                        
-                        result = convolve_with_2forloops(img, kernel)
-                        plt.figure(figsize=(10,5))
-                        
-                        plt.subplot(1, 2, 1)
-                        plt.title('Original Greyscale')
-                        plt.imshow(img, cmap = 'gray')
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 2, 2)
-                        plt.title('Filtered (Blurred)')
-                        plt.imshow(result, cmap='gray')
-                        plt.axis('off')
-                        
-                        plt.show()
+                                        <div class="code-block-container">
+                                            <pre><code>
+                                                #part 1.1: Convolution with 2 for loops
+                                                import numpy as np
+                                                import matplotlib.pyplot as plt
+                                                import cv2
+                                                
+                                                img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
+                                                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                                                
+                                                kernel = np.ones((9, 9), dtype=np.float32) / 81.0
+                                                
+                                                def convolve_with_2forloops(img, kernel):
+                                                    kernel_h, kernel_w = kernel.shape
+                                                    img_h, img_w = img.shape
+                                                
+                                                    pad_h = kernel_h // 2
+                                                    pad_w = kernel_w // 2
+                                                
+                                                    padded_img = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode = 'constant', constant_values = 0)
+                                                
+                                                    flip_kernel = np.flip(np.flip(kernel, axis = 0), axis = 1)
+                                                
+                                                    output = np.zeros_like(img, dtype=np.float32)
+                                                
+                                                    for i in range(img_h):
+                                                        for j in range(img_w):
+                                                            roi = padded_img[i : i + kernel_h, j : j + kernel_w]
+                                                            output[i, j] = np.sum(roi * flip_kernel)
+                                                            
+                                                    return output
+                                                
+                                                result = convolve_with_2forloops(img, kernel)
+                                                plt.figure(figsize=(10,5))
+                                                
+                                                plt.subplot(1, 2, 1)
+                                                plt.title('Original Greyscale')
+                                                plt.imshow(img, cmap = 'gray')
+                                                plt.axis('off')
+                                                
+                                                plt.subplot(1, 2, 2)
+                                                plt.title('Filtered (Blurred)')
+                                                plt.imshow(result, cmap='gray')
+                                                plt.axis('off')
+                                                
+                                                plt.show()
+                                            </code></pre>
+                                        </div>
+                                        <p class="section-desc">This time we used two for loops instead of four. Instead of iterating over the entire image, 
+                                            this time around we pick a region of interest matching the size of our kernel, perform the convolution calculation and 
+                                            then slide our region of interest one column to the right and repeat for the entire image. Below is the result of this code and 
+                                            you can see the results are identical however the processing time is significantly reduced and larger images can be processed more effeciently with this code.   
+                                        </p>
+                                        
+                                        <div class="image-grid">
+                                            <div class="image-card">
+                                                <img src="blog _pics\img4.png" alt="img4">
+                                            </div>
+                                        </div>
+                                     </div>
+                                    <p class="section-desc">Next, we take things up a notch and streamline the code even further. We will use the built in convolution function from the SciPy python library this time as it is optimized to perform large calculations very efficiently. </p>    
+                                        <div class="code-block-container">
+                                            <pre><code>
+                                                #part 1.1: Convolution with scipy
+                                                import numpy as np
+                                                import matplotlib.pyplot as plt
+                                                import cv2
+                                                from scipy.signal import convolve2d
+                                                
+                                                img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
+                                                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                                                
+                                                kernel = np.ones((9, 9), dtype=np.float32) / 81.0
+                                                
+                                                result = convolve2d(img, kernel)
+                                                
+                                                result = convolve_with_2forloops(img, kernel)
+                                                plt.figure(figsize=(10,5))
+                                                
+                                                plt.subplot(1, 2, 1)
+                                                plt.title('Original Greyscale')
+                                                plt.imshow(img, cmap = 'gray')
+                                                plt.axis('off')
+                                                
+                                                plt.subplot(1, 2, 2)
+                                                plt.title('Filtered (Blurred)')
+                                                plt.imshow(result, cmap='gray')
+                                                plt.axis('off')
+                                                
+                                                plt.show()
                     </code></pre>
                 </div>               
                 <div class="image-grid">
