@@ -269,14 +269,26 @@
                 <p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
                 After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
                 arrays in my code.</p
-                <p class="section-desc">The computeH function calculates the homography matrix taking the cordinate arrays as the input.
+                <p class="section-desc">The computeH function then takes the arrays as input and calculates the homography matrix taking the cordinate arrays as the input.
                 The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
                 coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
                 to create matrix A of size 2N X 9. Where each point correspondence contributes to two rows of linear equations representing
                 Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
                 least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
                 a 3 x 3 matrix format and scales it by its bottom-right element such that magnitude of H equals 1, before returning the final
-                homography matrix.</p>
+                homography matrix.
+
+                The get_bounding_box function then calculates the spatial boundaries of the warped image taking the source image dimensions
+                and homography matrix as input. First, the function projects the four literal corner coordinates of the source image using 
+                the homography matrix and normalizes them by their homogeneous scale factor. 
+                Next, it combines these transformed coordinates with the original image bounds and computes the minimum and maximum spatial 
+                extents using floor and ceil operations. Finally, it applies safety clamps to prevent runaway memory allocation and 
+                returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.
+
+                Now that I have homography matrix and the size of the canvas for my final warped image I will create the final warped image
+                by transforming the source image using the homography matrix and mapping it onto the destination image. I use two different methods
+                to compare how each method affects the processing time and the final result of warping.
+                </p>
                 
                 <div class="image-grid">
                     <div class="image-card">
