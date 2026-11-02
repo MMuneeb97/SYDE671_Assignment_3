@@ -25,1049 +25,356 @@
  </p>
             
             <!-- SECTION 1: INTRODUCTION TO CONVOLUTION -->
-            <div class="section-block">
-                <h2 class="section-title">Section 1: Homographies, Warping and Mosaicing</h2>
-                <p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. I have chosen few different pairs of images
-                to implement warping on. The first set is the classical chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
-                The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. I will discuss why the pictures that I took in the park were not good images to
-                implement image warping on and why the chessboard example works better.</p>
-                <p class="section-desc">Let's begin by first looking at the code and how we calculated the homographies and implemented warping.</p>
-                <div class="code-block-container">
-                    <pre><code>
-                        import numpy as np
-                        import cv2
-                        import matplotlib.pyplot as plt
-                        
-                        img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\left01.jpg")
-                        img2 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\chessboard.png")
-                        
-                        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-                        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
-                        
-                        pts1 = np.array([[243, 65], [512, 53], [509, 296], [250, 281]], dtype=np.float64)
-                        pts2 = np.array([[220, 108],[1403, 106],[1402, 1131],[81, 1132]], dtype=np.float64)
-                        
-                        def computeH(im1_pts, im2_pts):
-                            n = im1_pts.shape[0]
-                            if n < 4:
-                                raise ValueError("At least 4 point correspondences are required.")
-                            
-                            A = []
-                            for i in range(n):
-                                x, y = im1_pts[i, 0], im1_pts[i, 1]
-                                xp, yp = im2_pts[i, 0], im2_pts[i, 1]
-                                
-                                row1 = [-x, -y, -1,  0,  0,  0,  x * xp,  y * xp,  xp]
-                                row2 = [ 0,  0,  0, -x, -y, -1,  x * yp,  y * yp,  yp]
-                                
-                                A.append(row1)
-                                A.append(row2)
-                                
-                            A = np.array(A, dtype=np.float64)
-                            
-                            _, _, Vt = np.linalg.svd(A)
-                            h = Vt[-1, :]
-                            
-                            H = h.reshape(3, 3)
-                            if H[2, 2] != 0:
-                                H = H / H[2, 2]
-                                
-                            return H
-                        
-                        def visualize_correspondences(img1, img2, im1_pts, im2_pts):
-                           
-                            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-                            
-                            axes[0].imshow(img1)
-                            axes[0].scatter(im1_pts[:, 0], im1_pts[:, 1], c='red', s=40, marker='o')
-                            axes[0].set_title("Source Image (im1_pts)")
-                            axes[0].axis('off')
-                            
-                            axes[1].imshow(img2)
-                            axes[1].scatter(im2_pts[:, 0], im2_pts[:, 1], c='blue', s=40, marker='x')
-                            axes[1].set_title("Destination Image (im2_pts)")
-                            axes[1].axis('off')
-                            
-                            plt.tight_layout()
-                            plt.show()
-                        
-                        def get_bounding_box(im_shape, H):
-                            """
-                            Predicts the bounding box of the warped image with safety clamps 
-                            to prevent runaway memory errors.
-                            """
-                            h, w = im_shape[:2]
-                            corners = np.array([
-                                [0, 0, 1],
-                                [w - 1, 0, 1],
-                                [w - 1, h - 1, 1],
-                                [0, h - 1, 1]
-                            ]).T  # Shape: (3, 4)
-                        
-                            transformed_corners = H @ corners
-                        
-                            z_vals = transformed_corners[2, :]
-                            z_vals[np.abs(z_vals) < 1e-5] = 1e-5
-                            transformed_corners /= z_vals
-                            
-                            x_coords = transformed_corners[0, :]
-                            y_coords = transformed_corners[1, :]
-                            
-                            all_x = np.append(x_coords, [0, w])
-                            all_y = np.append(y_coords, [0, h])
-                            
-                            x_min = max(int(np.floor(all_x.min())), -2 * w)
-                            x_max = min(int(np.ceil(all_x.max())), 3 * w)
-                            y_min = max(int(np.floor(all_y.min())), -2 * h)
-                            y_max = min(int(np.ceil(all_y.max())), 3 * h)
-                            
-                            return x_min, x_max, y_min, y_max
-                        
-                        
-                        def warpImageNearestNeighbor(im, H):
-                            """
-                            Warps image im using homography H with Nearest Neighbor interpolation (inverse warping).
-                            """
-                            h, w = im.shape[:2]
-                            channels = im.shape[2] if len(im.shape) == 3 else 1
-                            
-                            x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
-                            out_w = x_max - x_min + 1
-                            out_h = y_max - y_min + 1
-                            
-                            x_indices = np.arange(x_min, x_max + 1)
-                            y_indices = np.arange(y_min, y_max + 1)
-                            X_out, Y_out = np.meshgrid(x_indices, y_indices)
-                            
-                            num_pixels = out_w * out_h
-                            ones = np.ones((1, num_pixels))
-                            coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
-                        
-                            H_inv = np.linalg.inv(H)
-                            coords_src = H_inv @ coords_out
-                            coords_src /= coords_src[2, :]  
-                            
-                            X_src = coords_src[0, :].reshape((out_h, out_w))
-                            Y_src = coords_src[1, :].reshape((out_h, out_w))
-                            
-                            X_nn = np.round(X_src).astype(np.int64)
-                            Y_nn = np.round(Y_src).astype(np.int64)
-                            
-                            valid_mask = (X_nn >= 0) & (X_nn < w) & (Y_nn >= 0) & (Y_nn < h)
-                            
-                            X_nn_clamped = np.clip(X_nn, 0, w - 1)
-                            Y_nn_clamped = np.clip(Y_nn, 0, h - 1)
-                            
-                            if channels > 1:
-                                im_warped = np.zeros((out_h, out_w, channels), dtype=im.dtype)
-                                alpha_mask = np.zeros((out_h, out_w), dtype=np.float64)
-                                for c in range(channels):
-                                    channel_data = im[:, :, c]
-                                    sampled = channel_data[Y_nn_clamped, X_nn_clamped]
-                                    sampled[~valid_mask] = 0
-                                    im_warped[:, :, c] = sampled
-                            else:
-                                im_warped = im[Y_nn_clamped, X_nn_clamped]
-                                im_warped[~valid_mask] = 0
-                                im_warped = im_warped.reshape((out_h, out_w))
-                                
-                            alpha_mask = valid_mask.astype(np.float64)
-                            
-                            return im_warped, alpha_mask
-                        
-                        
-                        def warpImageBilinear(im, H):
-                            """
-                            Warps image im using homography H with Bilinear interpolation (inverse warping).
-                            """
-                            h, w = im.shape[:2]
-                            channels = im.shape[2] if len(im.shape) == 3 else 1
-                            
-                            x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
-                            out_w = x_max - x_min + 1
-                            out_h = y_max - y_min + 1
-                            
-                            x_indices = np.arange(x_min, x_max + 1)
-                            y_indices = np.arange(y_min, y_max + 1)
-                            X_out, Y_out = np.meshgrid(x_indices, y_indices)
-                            
-                            num_pixels = out_w * out_h
-                            ones = np.ones((1, num_pixels))
-                            coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
-                            
-                            H_inv = np.linalg.inv(H)
-                            coords_src = H_inv @ coords_out
-                            coords_src /= coords_src[2, :]
-                            
-                            X_src = coords_src[0, :].reshape((out_h, out_w))
-                            Y_src = coords_src[1, :].reshape((out_h, out_w))
-                            
-                            x0 = np.floor(X_src).astype(np.int64)
-                            x1 = x0 + 1
-                            y0 = np.floor(Y_src).astype(np.int64)
-                            y1 = y0 + 1
-                            
-                            wa = (x1 - X_src) * (y1 - Y_src)
-                            wb = (X_src - x0) * (y1 - Y_src)
-                            wc = (x1 - X_src) * (Y_src - y0)
-                            wd = (X_src - x0) * (Y_src - y0)
-                        
-                            valid_mask = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
-                         
-                            x0_c = np.clip(x0, 0, w - 1)
-                            x1_c = np.clip(x1, 0, w - 1)
-                            y0_c = np.clip(y0, 0, h - 1)
-                            y1_c = np.clip(y1, 0, h - 1)
-                            
-                            if channels > 1:
-                                im_warped = np.zeros((out_h, out_w, channels), dtype=np.float64)
-                                for c in range(channels):
-                                    channel_data = im[:, :, c].astype(np.float64)
-                                    Ia = channel_data[y0_c, x0_c]
-                                    Ib = channel_data[y0_c, x1_c]
-                                    Ic = channel_data[y1_c, x0_c]
-                                    Id = channel_data[y1_c, x1_c]
-                                    
-                                    interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
-                                    interpolated[~valid_mask] = 0
-                                    im_warped[:, :, c] = interpolated
-                                im_warped = np.clip(im_warped, 0, 255).astype(im.dtype)
-                            else:
-                                channel_data = im.astype(np.float64)
-                                Ia = channel_data[y0_c, x0_c]
-                                Ib = channel_data[y0_c, x1_c]
-                                Ic = channel_data[y1_c, x0_c]
-                                Id = channel_data[y1_c, x1_c]
-                                
-                                interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
-                                interpolated[~valid_mask] = 0
-                                im_warped = np.clip(interpolated, 0, 255).astype(im.dtype)
-                                
-                            alpha_mask = valid_mask.astype(np.float64)
-                            
-                            return im_warped, alpha_mask
-                            
-                        visualize_correspondences(img1, img2, pts1, pts2)
-                        
-                        im_warped, alpha = warpImageBilinear(img1, H_recovered)
-                        im_warped_nn, alpha_nn = warpImageNearestNeighbor(img1, H_recovered)
-                        
-                        fig, axes = plt.subplots(1, 2, figsize=(14, 7))
-                        
-                        axes[0].imshow(im_warped_nn)
-                        axes[0].set_title("Nearest Neighbor Interpolation")
-                        axes[0].axis('off')
-                        
-                        axes[1].imshow(im_warped)
-                        axes[1].set_title("Bilinear Interpolation")
-                        axes[1].axis('off')
-                        
-                        plt.tight_layout()
-                        plt.show()
-            </code></pre>
-        </div>
-                <p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
-                After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
-                arrays in my code.</p
-                <p class="section-desc">The computeH function then takes the arrays as input and calculates the homography matrix taking the cordinate arrays as the input.
-                The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
-                coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
-                to create matrix A of size 2N X 9. Where each point correspondence contributes to two rows of linear equations representing
-                Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
-                least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
-                a 3 x 3 matrix format and scales it by its bottom-right element such that magnitude of H equals 1, before returning the final
-                homography matrix.
+<div class="section-block">
+		<h2 class="section-title">Section 1: Homographies, Warping and Mosaicing</h2>
+		<p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. I have chosen few different pairs of images
+		to implement warping on. The first set is the classical chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
+		The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. I will discuss why the pictures that I took in the park were not good images to
+		implement image warping on and why the chessboard example works better.</p>
+		<p class="section-desc">Let's begin by first looking at the code and how we calculated the homographies and implemented warping.</p>
+		<div class="code-block-container">
+				<pre><code>
+						import numpy as np
+						import cv2
+						import matplotlib.pyplot as plt
+						
+						img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\left01.jpg")
+						img2 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\chessboard.png")
+						
+						img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+						img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
+						
+						pts1 = np.array([[243, 65], [512, 53], [509, 296], [250, 281]], dtype=np.float64)
+						pts2 = np.array([[220, 108],[1403, 106],[1402, 1131],[81, 1132]], dtype=np.float64)
+						
+						def computeH(im1_pts, im2_pts):
+								n = im1_pts.shape[0]
+								if n < 4:
+										raise ValueError("At least 4 point correspondences are required.")
+								
+								A = []
+								for i in range(n):
+										x, y = im1_pts[i, 0], im1_pts[i, 1]
+										xp, yp = im2_pts[i, 0], im2_pts[i, 1]
+										
+										row1 = [-x, -y, -1,  0,  0,  0,  x * xp,  y * xp,  xp]
+										row2 = [ 0,  0,  0, -x, -y, -1,  x * yp,  y * yp,  yp]
+										
+										A.append(row1)
+										A.append(row2)
+										
+								A = np.array(A, dtype=np.float64)
+								
+								_, _, Vt = np.linalg.svd(A)
+								h = Vt[-1, :]
+								
+								H = h.reshape(3, 3)
+								if H[2, 2] != 0:
+										H = H / H[2, 2]
+										
+								return H
+						
+						def visualize_correspondences(img1, img2, im1_pts, im2_pts):
+							 
+								fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+								
+								axes[0].imshow(img1)
+								axes[0].scatter(im1_pts[:, 0], im1_pts[:, 1], c='red', s=40, marker='o')
+								axes[0].set_title("Source Image (im1_pts)")
+								axes[0].axis('off')
+								
+								axes[1].imshow(img2)
+								axes[1].scatter(im2_pts[:, 0], im2_pts[:, 1], c='blue', s=40, marker='x')
+								axes[1].set_title("Destination Image (im2_pts)")
+								axes[1].axis('off')
+								
+								plt.tight_layout()
+								plt.show()
+						
+						def get_bounding_box(im_shape, H):
+								"""
+								Predicts the bounding box of the warped image with safety clamps 
+								to prevent runaway memory errors.
+								"""
+								h, w = im_shape[:2]
+								corners = np.array([
+										[0, 0, 1],
+										[w - 1, 0, 1],
+										[w - 1, h - 1, 1],
+										[0, h - 1, 1]
+								]).T  # Shape: (3, 4)
+						
+								transformed_corners = H @ corners
+						
+								z_vals = transformed_corners[2, :]
+								z_vals[np.abs(z_vals) < 1e-5] = 1e-5
+								transformed_corners /= z_vals
+								
+								x_coords = transformed_corners[0, :]
+								y_coords = transformed_corners[1, :]
+								
+								all_x = np.append(x_coords, [0, w])
+								all_y = np.append(y_coords, [0, h])
+								
+								x_min = max(int(np.floor(all_x.min())), -2 * w)
+								x_max = min(int(np.ceil(all_x.max())), 3 * w)
+								y_min = max(int(np.floor(all_y.min())), -2 * h)
+								y_max = min(int(np.ceil(all_y.max())), 3 * h)
+								
+								return x_min, x_max, y_min, y_max
+						
+						
+						def warpImageNearestNeighbor(im, H):
+								"""
+								Warps image im using homography H with Nearest Neighbor interpolation (inverse warping).
+								"""
+								h, w = im.shape[:2]
+								channels = im.shape[2] if len(im.shape) == 3 else 1
+								
+								x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
+								out_w = x_max - x_min + 1
+								out_h = y_max - y_min + 1
+								
+								x_indices = np.arange(x_min, x_max + 1)
+								y_indices = np.arange(y_min, y_max + 1)
+								X_out, Y_out = np.meshgrid(x_indices, y_indices)
+								
+								num_pixels = out_w * out_h
+								ones = np.ones((1, num_pixels))
+								coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
+						
+								H_inv = np.linalg.inv(H)
+								coords_src = H_inv @ coords_out
+								coords_src /= coords_src[2, :]  
+								
+								X_src = coords_src[0, :].reshape((out_h, out_w))
+								Y_src = coords_src[1, :].reshape((out_h, out_w))
+								
+								X_nn = np.round(X_src).astype(np.int64)
+								Y_nn = np.round(Y_src).astype(np.int64)
+								
+								valid_mask = (X_nn >= 0) & (X_nn < w) & (Y_nn >= 0) & (Y_nn < h)
+								
+								X_nn_clamped = np.clip(X_nn, 0, w - 1)
+								Y_nn_clamped = np.clip(Y_nn, 0, h - 1)
+								
+								if channels > 1:
+										im_warped = np.zeros((out_h, out_w, channels), dtype=im.dtype)
+										alpha_mask = np.zeros((out_h, out_w), dtype=np.float64)
+										for c in range(channels):
+												channel_data = im[:, :, c]
+												sampled = channel_data[Y_nn_clamped, X_nn_clamped]
+												sampled[~valid_mask] = 0
+												im_warped[:, :, c] = sampled
+								else:
+										im_warped = im[Y_nn_clamped, X_nn_clamped]
+										im_warped[~valid_mask] = 0
+										im_warped = im_warped.reshape((out_h, out_w))
+										
+								alpha_mask = valid_mask.astype(np.float64)
+								
+								return im_warped, alpha_mask
+						
+						
+						def warpImageBilinear(im, H):
+								"""
+								Warps image im using homography H with Bilinear interpolation (inverse warping).
+								"""
+								h, w = im.shape[:2]
+								channels = im.shape[2] if len(im.shape) == 3 else 1
+								
+								x_min, x_max, y_min, y_max = get_bounding_box(im.shape, H)
+								out_w = x_max - x_min + 1
+								out_h = y_max - y_min + 1
+								
+								x_indices = np.arange(x_min, x_max + 1)
+								y_indices = np.arange(y_min, y_max + 1)
+								X_out, Y_out = np.meshgrid(x_indices, y_indices)
+								
+								num_pixels = out_w * out_h
+								ones = np.ones((1, num_pixels))
+								coords_out = np.vstack((X_out.flatten(), Y_out.flatten(), ones))
+								
+								H_inv = np.linalg.inv(H)
+								coords_src = H_inv @ coords_out
+								coords_src /= coords_src[2, :]
+								
+								X_src = coords_src[0, :].reshape((out_h, out_w))
+								Y_src = coords_src[1, :].reshape((out_h, out_w))
+								
+								x0 = np.floor(X_src).astype(np.int64)
+								x1 = x0 + 1
+								y0 = np.floor(Y_src).astype(np.int64)
+								y1 = y0 + 1
+								
+								wa = (x1 - X_src) * (y1 - Y_src)
+								wb = (X_src - x0) * (y1 - Y_src)
+								wc = (x1 - X_src) * (Y_src - y0)
+								wd = (X_src - x0) * (Y_src - y0)
+						
+								valid_mask = (x0 >= 0) & (x1 < w) & (y0 >= 0) & (y1 < h)
+						 
+								x0_c = np.clip(x0, 0, w - 1)
+								x1_c = np.clip(x1, 0, w - 1)
+								y0_c = np.clip(y0, 0, h - 1)
+								y1_c = np.clip(y1, 0, h - 1)
+								
+								if channels > 1:
+										im_warped = np.zeros((out_h, out_w, channels), dtype=np.float64)
+										for c in range(channels):
+												channel_data = im[:, :, c].astype(np.float64)
+												Ia = channel_data[y0_c, x0_c]
+												Ib = channel_data[y0_c, x1_c]
+												Ic = channel_data[y1_c, x0_c]
+												Id = channel_data[y1_c, x1_c]
+												
+												interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
+												interpolated[~valid_mask] = 0
+												im_warped[:, :, c] = interpolated
+										im_warped = np.clip(im_warped, 0, 255).astype(im.dtype)
+								else:
+										channel_data = im.astype(np.float64)
+										Ia = channel_data[y0_c, x0_c]
+										Ib = channel_data[y0_c, x1_c]
+										Ic = channel_data[y1_c, x0_c]
+										Id = channel_data[y1_c, x1_c]
+										
+										interpolated = wa * Ia + wb * Ib + wc * Ic + wd * Id
+										interpolated[~valid_mask] = 0
+										im_warped = np.clip(interpolated, 0, 255).astype(im.dtype)
+										
+								alpha_mask = valid_mask.astype(np.float64)
+								
+								return im_warped, alpha_mask
+								
+						visualize_correspondences(img1, img2, pts1, pts2)
+						
+						im_warped, alpha = warpImageBilinear(img1, H_recovered)
+						im_warped_nn, alpha_nn = warpImageNearestNeighbor(img1, H_recovered)
+						
+						fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+						
+						axes[0].imshow(im_warped_nn)
+						axes[0].set_title("Nearest Neighbor Interpolation")
+						axes[0].axis('off')
+						
+						axes[1].imshow(im_warped)
+						axes[1].set_title("Bilinear Interpolation")
+						axes[1].axis('off')
+						
+						plt.tight_layout()
+						plt.show()
+</code></pre>
+</div>
+		<p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
+		After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
+		arrays in my code.</p
+		<p class="section-desc">The computeH function then takes the arrays as input and calculates the homography matrix taking the cordinate arrays as the input.
+		The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
+		coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
+		to create matrix A of size 2N X 9. Where each point correspondence contributes to two rows of linear equations representing
+		Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
+		least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
+		a 3 x 3 matrix format and scales it by its bottom-right element such that magnitude of H equals 1, before returning the final
+		homography matrix.
 
-                The get_bounding_box function then calculates the spatial boundaries of the warped image taking the source image dimensions
-                and homography matrix as input. First, the function projects the four literal corner coordinates of the source image using 
-                the homography matrix and normalizes them by their homogeneous scale factor. 
-                Next, it combines these transformed coordinates with the original image bounds and computes the minimum and maximum spatial 
-                extents using floor and ceil operations. Finally, it applies safety clamps to prevent runaway memory allocation and 
-                returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.
+		The get_bounding_box function then calculates the spatial boundaries of the warped image taking the source image dimensions
+		and homography matrix as input. First, the function projects the four literal corner coordinates of the source image using 
+		the homography matrix and normalizes them by their homogeneous scale factor. 
+		Next, it combines these transformed coordinates with the original image bounds and computes the minimum and maximum spatial 
+		extents using floor and ceil operations. Finally, it applies safety clamps to prevent runaway memory allocation and 
+		returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.
 
-                Now that I have homography matrix and the size of the canvas for my final warped image I will create the final warped image
-                by transforming the source image using the homography matrix and mapping it onto the destination image. I use two different methods
-                to compare how each method affects the processing time and the final result of warping.
-                </p>
-                
-                <div class="image-grid">
-                    <div class="image-card">
-                        <img src="images\warped chessboard.PNG" alt="img1">
-                    </div>
-                </div>
-                <p class="section-desc"></p>    
-                        
-                                        <div class="code-block-container">
-                                            <pre><code>
-                                                #part 1.1: Convolution with 2 for loops
-                                                import numpy as np
-                                                import matplotlib.pyplot as plt
-                                                import cv2
-                                                
-                                                img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                                                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                                                
-                                                kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-                                                
-                                                def convolve_with_2forloops(img, kernel):
-                                                    kernel_h, kernel_w = kernel.shape
-                                                    img_h, img_w = img.shape
-                                                
-                                                    pad_h = kernel_h // 2
-                                                    pad_w = kernel_w // 2
-                                                
-                                                    padded_img = np.pad(img, ((pad_h, pad_h), (pad_w, pad_w)), mode = 'constant', constant_values = 0)
-                                                
-                                                    flip_kernel = np.flip(np.flip(kernel, axis = 0), axis = 1)
-                                                
-                                                    output = np.zeros_like(img, dtype=np.float32)
-                                                
-                                                    for i in range(img_h):
-                                                        for j in range(img_w):
-                                                            roi = padded_img[i : i + kernel_h, j : j + kernel_w]
-                                                            output[i, j] = np.sum(roi * flip_kernel)
-                                                            
-                                                    return output
-                                                
-                                                result = convolve_with_2forloops(img, kernel)
-                                                plt.figure(figsize=(10,5))
-                                                
-                                                plt.subplot(1, 2, 1)
-                                                plt.title('Original Greyscale')
-                                                plt.imshow(img, cmap = 'gray')
-                                                plt.axis('off')
-                                                
-                                                plt.subplot(1, 2, 2)
-                                                plt.title('Filtered (Blurred)')
-                                                plt.imshow(result, cmap='gray')
-                                                plt.axis('off')
-                                                
-                                                plt.show()
-                                            </code></pre>
-                                        </div>
-                                        <p class="section-desc">This time we used two for loops instead of four. Instead of iterating over the entire image, 
-                                            this time around we pick a region of interest matching the size of our kernel, perform the convolution calculation and 
-                                            then slide our region of interest one column to the right and repeat for the entire image. Below is the result of this code and 
-                                            you can see the results are identical however the processing time is significantly reduced and larger images can be processed more effeciently with this code.   
-                                        </p>
-                                        
-                                        <div class="image-grid">
-                                            <div class="image-card">
-                                                <img src="blog _pics\img4.png" alt="img4">
-                                            </div>
-                                        </div>
-                                     </div>
-                                    <p class="section-desc">Next, we take things up a notch and streamline the code even further. We will use the built in convolution function from the SciPy python library this time as it is optimized to perform large calculations very efficiently. </p>    
-                                        <div class="code-block-container">
-                                            <pre><code>
-                                                #part 1.1: Convolution with scipy
-                                                import numpy as np
-                                                import matplotlib.pyplot as plt
-                                                import cv2
-                                                from scipy.signal import convolve2d
-                                                
-                                                img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                                                img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                                                
-                                                kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-                                                
-                                                result = convolve2d(img, kernel)
-                                                
-                                                result = convolve_with_2forloops(img, kernel)
-                                                plt.figure(figsize=(10,5))
-                                                
-                                                plt.subplot(1, 2, 1)
-                                                plt.title('Original Greyscale')
-                                                plt.imshow(img, cmap = 'gray')
-                                                plt.axis('off')
-                                                
-                                                plt.subplot(1, 2, 2)
-                                                plt.title('Filtered (Blurred)')
-                                                plt.imshow(result, cmap='gray')
-                                                plt.axis('off')
-                                                
-                                                plt.show()
-                    </code></pre>
-                </div>               
-                <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img6.png" alt="img6">
-                    </div>
-                </div>
-                <p class="section-desc">To conclude this section on convolution I think it’s fair to say that while manual nested loops are great for learning the underlying math, optimized libraries use vectorized operations and Fourier transforms to run much faster on large images   
-                </p>
-            </div>
+		Now that I have homography matrix and the size of the canvas for my final warped image I will create the final warped image
+		by transforming the source image using the homography matrix and mapping it onto the destination image. I use two different methods
+		and compare how each method affects the processing time and the final result of warping.
 
- <div class="card">
-            <!-- SECTION 2: EDGE DETECTION WITH DIFFERENCE OPERATORS -->
-            <div class="section-block">
-                <h2 class="section-title">Section 2: Edge Detection Using Difference Operators</h2>
-                <p class="section-desc">Now we will look at another useful way to process images and extract useful information. We are going to look at how to detect the edges of an image using the difference operators. Difference operators are uni-directional vectors that are used to extract magnitudes in the y and x directions. The dy operator works by subtracting the pixel above from the pixel below, this highlights the vertical edges as the operator moves across the image rows from top to bottom. The dx operator works in the same way but in the horizontal direction, capturing the magnitudes of the edges across the image from left to right.</p>
-                <p class="section-desc"">The code below uses the built-in convolve function and dx and dy difference operators to capture the edges of an input image. The convolution function takes care of the padding and also makes sure that output image is the same size as the original image.</p>
-                <div class="code-block-container">
-                    <pre><code>
-                        #part 1.1: Convolution with scipy
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
-                        from scipy.signal import convolve2d
+		The warpImageNearestNeighbor function performs inverse warping taking the source image and homography matrix as input. 
+		First, it determines the output canvas dimensions and generates a grid of destination pixel coordinates, which it maps 
+		back to floating-point source coordinates using the inverse homography matrix and homogeneous division. 
+		Next, it rounds these source coordinates to the nearest integer pixel index and applies a validity mask to 
+		filter out-of-bounds locations. Finally, it samples the color values directly from the single nearest neighbor at 
+		the clamped indices across all channels, returning the warped image along with a binary alpha mask.
+
+		The warpImageBilinear function does the same inverse warping as the warpImageNearestNeighbor function but where it difers is how
+		it samples the color values, insted of rounding to the closest pixel it takes a weighted average of four surrounding pixel neighbors 
+		across each color channel leading to a smooth boundary gradient instead of sharp boundaries avoiding jagged edges.
+		</p>
+		
+		<div class="image-grid">
+				<div class="image-card">
+						<img src="images\warped chessboard.PNG" alt="img1">
+				</div>
+		</div>
+		<p class="section-desc">In the image above, I have selected the 4 corners of the source image and the target image, both in
+		clockwise order to ensure that pixels from the source are corresponding to the same locations on the target image.
+		In the bottom two images, I have the two warped images from the NearestNeighbor and the Billienear functions shown.
+
+		the results of both the functions seem to have produced visibly identical results in this instance. The billinear function
+		took a little longer to process the image than nearest neighbor function and the processing time would likely increase with 
+		the size and complexity of images.
+		</p>    
+						
+								<div class="code-block-container">
+										<pre><code>
+												# Rectification
+												import numpy as np
+												import cv2
+												import matplotlib.pyplot as plt
+												
+												img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\window 2.jpeg")
+												img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+												
+												pts1 = np.array([[244, 694],[621, 737],[649, 966],[234, 966]], dtype=np.float64)
+												
+												width, height = 400, 400
+												pts2 = np.array([
+														[0, 0],         
+														[width, 0],       
+														[width, height],  
+														[0, height]       
+												], dtype=np.float64)
+												
+												H_recovered = computeH(pts1, pts2)
+												
+												im_warped, alpha = warpImageBilinear(img1, H_recovered)
+												
+												fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+												
+												axes[0].imshow(img1)
+												axes[0].scatter(pts1[:, 0], pts1[:, 1], color='red', s=80, marker='o')
+												axes[0].set_title("Input Image with Selected Points")
+												axes[0].axis('off')
+												
+												axes[1].imshow(im_warped)
+												axes[1].set_title("Rectified Surface")
+												axes[1].axis('off')
+												
+												plt.tight_layout()
+												plt.show()
+										</code></pre>
+								</div>
+								<p class="section-desc">To verify if my warping program works as expected so far, I ractified using a single image
+										with a rectangular object of interest and ran it with our compute function to check if the image is warped to focus in on
+										our object of interest and turn into a front facing image. 
+
+										The ractification takes manually input cordinates of the object of interest and then creates a flat canvas size based on
+										the input cordinates, calclates the homography, performs inversion and warps the image to make object of inerest from slanted 
+										to flat front facing image. Below are some examples on actual images using the above code.
+								</p>
+								
+								<div class="image-grid">
+										<div class="image-card">
+												<img src="images\window ractified.png" alt="img4">
+										</div>
+								</div>
+								<p class="section-desc">In the above image you can see that the window in the original image was captured with the
+								camera positioned to the left of the window. our ractification function has correctly warpe the image so that it becomes flat
+								and seems as if the camera was placed directly in front of it.</p>
+						 </div>
                         
-                        img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\Me.jpeg")
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        
-                        kernel = np.ones((9, 9), dtype=np.float32) / 81.0
-                        
-                        result = convolve2d(img, kernel)
-                        
-                        result = convolve_with_2forloops(img, kernel)
-                        plt.figure(figsize=(10,5))
-                        
-                        plt.subplot(1, 2, 1)
-                        plt.title('Original Greyscale')
-                        plt.imshow(img, cmap = 'gray')
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 2, 2)
-                        plt.title('Filtered (Blurred)')
-                        plt.imshow(result, cmap='gray')
-                        plt.axis('off')
-                        
-                        plt.show()
-                    </code></pre>
-                </div>
-             <p class="section-desc">The results of the above code are shown below.</p> 
-             <div class="image-grid">
-                <div class="image-card">
-                    <img src="blog _pics\img8.png" alt="img8">
-                </div>
-             </div>
             </div>
-            <p class="section-desc">We will now take a deeper dive into difference operators and see the individual gradients in the x and y directions along with the magnitude. 
-                The gradient is calculated by convolving the image with an x and y difference operator respectively and calculating the sum of the square roots of the gradients in dx and dy.
-                The following code is used to calculate the gradients.
-            </p>
-        <div class="code-block-container">
-                    <pre><code>
-                        #1.2 Finite diference operator
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
-                        from scipy.signal import convolve2d
-                        
-                        img = cv2.imread(r'C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\hybrid\cameraman.jpeg')
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                        
-                        dx = [[1, 0, -1]]
-                        dy = [[1],
-                              [0],
-                              [-1]
-                             ]
-                        
-                        grad_x = convolve2d(img, dx, mode='same', boundary='fill', fillvalue=0)
-                        grad_y = convolve2d(img, dy, mode='same', boundary='fill', fillvalue=0)
-                        grad_mag = np.sqrt(grad_x**2 + grad_y**2)
-                        
-                        plt.figure(figsize = (5, 5))
-                        plt.subplot(2, 2, 1)
-                        plt.title('Original Greyscale')
-                        plt.imshow(img)
-                        plt.axis('off')
-                        
-                        plt.subplot(2, 2, 2)
-                        plt.title('Partial derivative dx')
-                        plt.imshow(grad_x)
-                        plt.axis('off')
-                        
-                        plt.subplot(2, 2, 3)
-                        plt.title('Partial derivative dy')
-                        plt.imshow(grad_y)
-                        plt.axis('off')
-                        
-                        plt.subplot(2, 2, 4)
-                        plt.title('magnitude of dx and dy')
-                        plt.imshow(grad_mag)
-                        plt.axis('off')
-                        
-                        
-                        threshold = [20, 30, 40, 50, 60, 70, 80, 90]
-                        
-                        plt.figure(figsize= (16, 8))
-                        for i, j in enumerate (threshold, start=1):
-                            binarized_grad_mag = (grad_mag >= j) * 255
-                        
-                            plt.subplot(2, 4, i)
-                            plt.title(f'Threshold: {j}')
-                            plt.imshow(binarized_grad_mag)
-                            plt.axis('off')
-                        
-                        plt.show() 
-                    </code></pre>
-        </div>
-            <p class="section-desc">The image below shows the breakdown of the original greyscale into partial derivatives dx and dy capturing the vertical facing and horizontal facing edges 
-                respectively along with the combined gradient capturing the entire image. </p>
-            <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img9.png" alt="img9">
-                    </div>
-            </div>
-            <p class = "section-desc"> We have first calculated the gradient magnitudes using convolved function as explained in the previous steps Then we reduce the noise in the image by implementing a binarization loop and pre-defining a list of threshold values. The threshold values are intensity cutoffs for the pixels; any pixels that are greater than or equal to the threshold value are converted to a value of 255 and any pixels below the threshold value are turned to 0. This reduces the noise by emphasizing the prominent edge features and turns the background noise features dark. Below is the sweep of the image for different threshold values.</p>
-            <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img11.png" alt="img11">
-                    </div>
-            </div>
-        <p class="section-desc">As you can see that with lower threshold values, we get a lot of background noise from grass and other surrounding features but as we increase the threshold, the edges of the cameraman become crisper and more prominent but as we keep increasing the threshold beyond 60, we start to see the cameraman starts to turn darker and blend in with the surrounding. It is an iterative process to find the right threshold that focus on the important features, too low of a threshold and you’re looking for a needle in a haystack and too high of a threshold and you blend in with the surroundings.</p>
-        <p class="section-desc">The previous section outlined a general approach to edge detection. In this section we will take a deeper dive and take a look into how to enhance the edges from the same image using a different filter. The below code is used to first smoothen the original image and then convolve it using the DOG (derivative of gaussian) filter to detect the edges. We will compare the results of this section with the previous section.</p>
-            <div class="code-block-container">
-                    <pre><code>#1.3 Derivative of Gaussian (DoG) Filter
-                    #1.3 Derivative of Gaussian (DoG) Filter
-                    import numpy as np
-                    import matplotlib.pyplot as plt
-                    import matplotlib.colors as mcolors
-                    import cv2
-                    from scipy.signal import convolve2d
-                    
-                    img = cv2.imread(r'C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\hybrid\cameraman.jpeg')
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                    
-                    kernel_size = 5
-                    sigma = 1
-                    
-                    gaussian_1d = cv2.getGaussianKernel(ksize = kernel_size, sigma=sigma)
-                    gaussian_2d = np.outer(gaussian_1d, gaussian_1d.T)
-                    
-                    img_smoothed = convolve2d(img, gaussian_2d, mode ='same', boundary = 'fill', fillvalue =0)
-                    
-                    dx = [[1, 0, -1]]
-                    dy = [[1],
-                          [0],
-                          [-1]
-                         ]
-                    
-                    dog_x = convolve2d(gaussian_2d, dx)
-                    dog_y = convolve2d(gaussian_2d, dy)
-                    
-                    plt.figure(figsize = (5, 5))
-                    plt.subplot(1, 2, 1)
-                    plt.title('DoG dx')
-                    plt.imshow(dog_x, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(1, 2, 2)
-                    plt.title('DoG dy')
-                    plt.imshow(dog_y, cmap='gray')
-                    plt.axis('off')
-                    plt.show()
-                    
-                    grad_x = convolve2d(img_smoothed, dx, mode='same', boundary='fill', fillvalue=0)
-                    grad_y = convolve2d(img_smoothed, dy, mode='same', boundary='fill', fillvalue=0)
-                    grad_mag = np.sqrt(grad_x**2 + grad_y**2)
-                    
-                    grad_dogx = convolve2d(img, dog_x, mode='same', boundary='fill', fillvalue=0)
-                    grad_dogy = convolve2d(img, dog_y, mode='same', boundary='fill', fillvalue=0)
-                    grad_dogmag = np.sqrt(grad_dogx**2 + grad_dogy**2)
-                    
-                    plt.figure(figsize = (10, 10))
-                    plt.subplot(2, 2, 1)
-                    plt.title('Smoothed Image')
-                    plt.imshow(img_smoothed, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 2)
-                    plt.title('Smoothed dx')
-                    plt.imshow(grad_x, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 3)
-                    plt.title('Smoothed dy')
-                    plt.imshow(grad_y, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 4)
-                    plt.title('Smoothed Gradient Magnitude')
-                    plt.imshow(grad_mag, cmap='gray')
-                    plt.axis('off')
-                    plt.show()
-                    
-                    plt.figure(figsize = (10, 10))
-                    plt.subplot(2, 2, 1)
-                    plt.title('Original Image')
-                    plt.imshow(img, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 2)
-                    plt.title('DoG dx')
-                    plt.imshow(grad_dogx, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 3)
-                    plt.title('DoG dy')
-                    plt.imshow(grad_dogy, cmap='gray')
-                    plt.axis('off')
-                    
-                    plt.subplot(2, 2, 4)
-                    plt.title('DoG Gradient Magnitude')
-                    plt.imshow(grad_dogmag, cmap='gray')
-                    plt.axis('off')
-                    plt.show()
-                    
-                    threshold = [20, 30, 40, 50, 60, 70, 80, 90]
-                    
-                    plt.figure(figsize= (16, 8))
-                    plt.suptitle('Threshold Sweep: Smoothed Gradient Magnitude', fontsize=16)
-                    for i, j in enumerate (threshold, start=1):
-                        binarized_grad_mag = (grad_mag >= j) * 255
-                    
-                        plt.subplot(2, 4, i)
-                        plt.title(f'Threshold: {j}')
-                        plt.imshow(binarized_grad_mag, cmap='gray')
-                        plt.axis('off')
-                    plt.show()
-                    
-                    plt.figure(figsize= (16, 8))
-                    plt.suptitle('Threshold Sweep: DoG Gradient Magnitude', fontsize=16)
-                    for i, j in enumerate (threshold, start=1):
-                        binarized_dog_mag = (grad_dogmag >= j) * 255
-                    
-                        plt.subplot(2, 4, i)
-                        plt.title(f'DoG Threshold: {j}')
-                        plt.imshow(binarized_dog_mag, cmap='gray')
-                        plt.axis('off')
-                    plt.show()
-                    
-                    grad_angle = np.arctan2(grad_y, grad_x)
-                    hue = (grad_angle + np.pi) / (2*np.pi)
-                    grad_mag_norm = grad_mag / (np.max(grad_mag) + 1e-8)
-                    
-                    hsv_img = np.zeros((*img.shape, 3))
-                    hsv_img[..., 0] = hue
-                    hsv_img[..., 1] = 1.0
-                    hsv_img[..., 2] = grad_mag_norm
-                    rgb_img = mcolors.hsv_to_rgb(hsv_img)
-                    
-                    plt.figure(figsize = (5, 5))
-                    plt.title('Gradient Orientation (HSV Space)')
-                    plt.imshow(rgb_img)
-                    plt.axis('off')
-                    plt.show()
-                    </code></pre>
-        </div>
-        <p class="section-desc">The program works by first defining a column vector of size 5x1. The kernel is then multiplied by its transpose, a row vector of size 1x5 to create a symmetric 5x5 matrix with the highest value placed at its center and the sum of its elements equals to one to preserve the brightness of the original image. We then use this kernel to blur our input image. This blurred image will be used to detect edges using the DoG filters we will create next.
-We then calculate the DoG filters for x and y by convolving our 2D kernel with 1d vector kernels for x and y respectively. 
-Now for comparison’s sake, we perform two different approaches here. The first approach, the two-step approach involves blurring the image first and then convolving it with the 1D difference operators dx and dy. The second, the single step approach involves convolving the original image without blurring to the 2D kernel directly. This eliminates the intermediate calculation for the blurred image and makes the program more efficient. Let’s take a look at the results.
-</p>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img14.png" alt="img14">
-                    </div>
-        </div>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img15.png" alt="img15">
-                    </div>
-        </div>
-        <p class="section-desc">Before we even apply binarization and reduce the image noise with threshold, you can see the gradient magnitude obtained with the DoG filter is very similar to the one obtained with two-step method where we blurred the image first. Even though the result from the two-step method and the single step method are identical, the single-step method is computationally less intensive and can process larger images quicker and more efficiently.
-Next let’s look at how the images compare when we apply the same threshold to binarize the results.
-</p>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img16.png" alt="img16">
-                    </div>
-        </div>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img17.png" alt="img17">
-                    </div>
-        </div>
-        <p class="section-desc">The results look very similar with the two methods on this image if not identical. There are subtle differences that can be made out. The background noise due to grass and the surroundings is slightly less with the two-step method (smoothed gradient magnitude). If you focus between the tripod and cameraman’s legs, you can see the noise is smaller at threshold 30. Overall, it is hard to differentiate between the results with this image. Let’s look at another image.</p>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img18.png" alt="img18">
-                    </div>
-        </div>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img19.png" alt="img19">
-                    </div>
-        </div>
-        <p class="section-desc">Again, we get almost identical results for the Taj mahal image as well. Both methods are effective in capturing the edges. Both these images were almost the same size (30kb). Lets look at a larger image next.</p>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img20.png" alt="img20">
-                    </div>
-        </div>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img21.png" alt="img21">
-                    </div>
-        </div>
-        <p class="section-desc">The nutmeg image took longer to process with the two-step method than the single-step method due its size (300kb) and also since there is a lot more pixels involved in this one, whiskers and fur that are thin fine details. 
-        </p>
-     <p class = "section-desc">Lastly, we apply the HSV filter to color the edges and make them stronger, more prominent features standout and darken the low intensity edges. The HSV is a way to display the direction and magnitude of the image in one colored image.
-     </p>
-        <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img22.PNG" alt="img22">
-                    </div>
-        </div>
- </div>
-  <div class="card">       
-        <!-- SECTION 3: Image Sharpening -->
-            <div class="section-block">
-                <h2 class="section-title">Section 3: Image Sharpening and Unmasking Filter</h2>
-                <p class="section-desc">So far, we have discussed convolution and how to use it to smoothen/blur images. Next, we will look at how to unblur these images using the unsharp mask filter. Since the Gaussian filter we have been using so far retains only the low frequencies from the original image, if we subtract the blurred image from the original, we are left with a sharper image with more high frequencies. The code below does exactly this, it takes an input image blurs it and then resharpens it using this technique.</p>
-                <div class="code-block-container">
-                    <pre><code>
-                        #2.1 Image Sharpening
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
-                        from scipy.signal import convolve2d
-                        
-                        img = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\hybrid\cameraman.jpeg")
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        
-                        orig_img = img
-                        
-                        sigma = 1.0
-                        amount = 0.1
-                        ksize = 5
-                        
-                        gaussian_1D = cv2.getGaussianKernel(ksize = ksize, sigma = sigma)
-                        G = np.outer(gaussian_1d, gaussian_1d.T)
-                        
-                        delta = np.zeros((ksize, ksize))
-                        delta[ksize // 2, ksize // 2] = 1.0
-                        
-                        H_usm = (1.0 + amount) * delta - amount * G
-                        
-                        sharpened = np.zeros_like(img)
-                        
-                        for i in range(3):
-                            sharpened[..., i] = cv2.filter2D(
-                                img[..., i].astype(np.float32), -1, H_usm
-                            )
-                        sharpened = np.clip(sharpened, 0, 255).astype(np.uint8)
-                        
-                        plt.figure(figsize=(10, 5))
-                        plt.subplot(1, 2, 1)
-                        plt.title('Original Image')
-                        plt.imshow(orig_img)
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 2, 2)
-                        plt.title('Sharpened Image')
-                        plt.imshow(sharpened)
-                        plt.axis('off')
-                        
-                        plt.show()
-                    </code></pre>
-                </div>
-                <p class="section-desc">we are using the same kernel as before to blur the image we then create a mask using the H_USM formula by assigning a weight to how much of the frequencies to add back to the original image. Then we iterate through the three color channels, R,G,B, and plot the original and sharpened images.   
-                </p>
-                
-                <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img24.png" alt="img24">
-                    </div>
-                </div>
-                <p class="section-desc">We see some color fringes and artifacts in the processed image. These are mainly caused due to the processing of the color channels separately, if we have time left we will go over how to fix these later in the blog. Here are some more images processed using the same code.</p>    
-                <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img25.png" alt="img25">
-                    </div>
-                </div>
-                
-            </div> 
-    </div>
-             <div class="card">
-                 <!-- SECTION 4: Image blending -->
-            <div class="section-block">
-                <h2 class="section-title">Section 4: Image Blending</h2>
-                <p class="section-desc">In this next section we will discuss more advanced image processing techniques. We will look at how to create optical illusians by combining a pair of images.
-                By combining the low frequencies of one image to high frequencies of another we can create a visual effect that changes the image featres based on your viewing distance from the image.
-                Since viewing from a distance reduces the visibility of sharp, high frequncy features the low frequency image dominate and when viewing the image from close up, you see more detail i.e the
-                high frequency image.</p>
-            </div>
-                <p class="section-desc">In principal it sounds like a simple concept, simply take two images, blur the first one using a low pass gaussian filter to obtain the low frequencies from it and for
-                    second image subtract its smoothed version from the original to obtain its high frequencies, add the two together and done. In practice however, it takes some trial and error to perfectly align 
-                and scale the two together. Any misalignment and you won't get the desired effect you're looking for.</p>
-                <p class="section-desc">The code below is my first attempt at recreating the Derek-Nutmeg hybrid.</p>    
-         <div class="code-block-container">
-                    <pre><code>
-                        #2.2 #2.2 Hybrid Images Nutmeg Derek Colored 
-                        import numpy as np
-                        import matplotlib.pyplot as plt
-                        import cv2
-                        
-                        img1 = cv2.imread(
-                            r'C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment'
-                            r' 2\hybrid\DerekPicture.jpg'
-                        )
-                        img2 = cv2.imread(
-                            r'C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment'
-                            r' 2\hybrid\nutmeg.jpg'
-                        )
-                        
-                        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-                        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB)
-                        
-                        sigma_low = 7
-                        sigma_high = 5
-                        
-                        angle_degrees = 35
-                        scale_factor = 1.2
-                        tx, ty = 70, 0
-                        
-                        h, w = img1.shape[:2]
-                        
-                        h_img2, w_img2 = img2.shape[:2]
-                        img2_cropped = img2[
-                            int(h_img2 * 0.1) : int(h_img2 * 0.7), int(w_img2 * 0.2) : int(w_img2 * 0.8)
-                        ]
-                        hc, wc = img2_cropped.shape[:2]
-                        
-                        center = (wc // 2, hc // 2)
-                        M = cv2.getRotationMatrix2D(center, angle_degrees, scale_factor)
-                        
-                        dst_x = (w / 2) + tx
-                        dst_y = (h / 2) + ty
-                        M[0, 2] = dst_x - (M[0, 0] * center[0] + M[0, 1] * center[1])
-                        M[1, 2] = dst_y - (M[1, 0] * center[0] + M[1, 1] * center[1])
-                        
-                        img2_aligned = cv2.warpAffine(
-                            img2_cropped, M, (w, h), borderValue=(255, 255, 255)
-                        )
-                        
-                        low_freq = cv2.GaussianBlur(
-                            img1.astype(np.float32), (0, 0), sigmaX=sigma_low, sigmaY=sigma_low
-                        )
-                        blur_img2 = cv2.GaussianBlur(
-                            img2_aligned.astype(np.float32), (0, 0), sigmaX=sigma_high, sigmaY=sigma_high
-                        )
-                        
-                        high_freq = img2_aligned.astype(np.float32) - blur_img2
-                        
-                        hybrid_img = low_freq + high_freq
-                        hybrid_img = np.clip(hybrid_img, 0, 255).astype(np.uint8)
-                        
-                        plt.figure(figsize=(15, 5))
-                        
-                        plt.subplot(1, 3, 1)
-                        plt.title('Image 1 (Low Pass Source)')
-                        plt.imshow(img1)
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 3, 2)
-                        plt.title('Image 2 (High Pass Source)')
-                        plt.imshow(img2_aligned)
-                        plt.axis('off')
-                        
-                        plt.subplot(1, 3, 3)
-                        plt.title('Resulting Hybrid Image')
-                        plt.imshow(hybrid_img)
-                        plt.axis('off')
-                        
-                        plt.tight_layout()
-                        plt.show()
-                    </code></pre>
-                </div>
-                    <p class="section-desc">After reading in the images and obtaining the low and high frequencies, I resize the images so that both images are the same size. In this particular example
-                    since the nutmeg has the cat's face rotated I rotated the image counter clockwise to straighten the cat's face and tried cropping it to obtain straight edges but I could not get it to be square 
-                    image after the crop. The image ends p being a weeird diamond shape and does not align at all with Derek's face as shown below.</p>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img27.PNG" alt="img27">
-                    </div>
-                </div>
-                 <p class="section-desc">As you can see the cat is not only out of place but also out of scale. Another thing I realize is that I'm using the colored images for creating the hybrid images. In the next image 
-                     I try to use greyscale versions of the same images to get better results</p>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img28.PNG" alt="img28">
-                    </div>
-                </div>
-                 <p class="section-desc">After playing around with the scale and x and y alignment factors, I get the image to line up better but still could not get the borders on image 1 be square or blend in 
-                 on the final image. Next I will try applying the same concept to another pair of images. I will try to recreate the Einstein Monroe image.</p>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img29.PNG" alt="img29">
-                    </div>
-                </div>
-                 <p class="section-desc">I had a similar issue with this one. I can not get the scale to be right, if i align the eyes the nose and rest of the features don't align and horizontally the ears and hair 
-                 don't align well either. The problem here is that I'm trying to manally align and scale the images and also I'm picking one reference point, eyes, to align to. For it to actually work and alignment
-                 to be perfect there needs to be more than one reference points and also the coordinate used to align the images have to be more accurate. The best way to do this is be first displaying the images
-                 then selecting multiple points on the displayed iaage and using the coordinates of the selected points as alignment coordinates. This is one of the limitations of using Jupyter notebook for user interactive
-                 program. Since I do not have access to a better IDE at the moment, I will focus on using the image from earlier, Derek and nutmeg hybrid which had decent alignment to demonstrate the frequency cut-off analysis.
-                 </p>
-                 <p class="section-desc">I recreated the hybrid first and this time lowered the sigma for low frequecy from 7 to 5 and increased the sigma for high frequency from 5 to 15. I'm using Derek as the low 
-                 frequency component and Nutmeg as the higher frequency component so by changing the sigmas I'm capturing of Derek and less of Nutmeg. So on viewing the image close up, you see more of Derek and as you move
-                 away from the image yo see Nutmeg more clearly take over Derek.</p>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img30.PNG" alt="img30">
-                    </div>
-                </div>
-                 <p class="section-desc">Next, I perform frequency domain analysis to illustrate the step-by-step filtering process applied to construct the hybrid image. 
-                     The initial two images display the log-magnitude 2D Fourier transforms of the aligned input source images before filtering. 
-                     The third image represents the low-frequency component isolated via a 2D Gaussian filter, which concentrates spectral energy tightly at the center axis while attenuating higher frequencies.
-                     Conversely, the fourth image shows the high-frequency component, which suppresses the central low-frequency region to retain sharp edges and fine details. 
-                     Finally, the last image shows the spectrum of the resulting hybrid image, combining both characteristics to demonstrate the coexistence of the low-frequency base and high-frequency details</p>
-                  <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img31.PNG" alt="img31">
-                    </div>
-                </div>
-                  <div class="section-block">
-                <p class="section-desc">In this section we look at how to blend two images together without having a seam at he overlapping edge. if you were to take two images cut them in the middle and join left half
-                of one to right half of the other you will get a dark unnatural seam and abrupt transition from one to the next. In order to avoid this we have to understand that imaes are like a lasagne, made up of layers,
-                each layer contaiing different details that when all stacked on top of each other form an image. This is the technique that Burt and Adelson described in their parper. In order to achieve a smooth transition when
-                joiing two images toether we can get a smooth natural transition if we first split the layers of the image, apply a fade to each layer depending on its frequency and then adding the layers back together to 
-                form the final image. By multiplying each layer by a different factor based on its frequency creates an even fade that gradually transitions and blurs out the image near the seam.</p>
-                <p class = "section-dsc">The code below is used to recreate the Burt Apple image from Computer Vision: Algorithms and Applications, 2nd ed. by Richard Szeliski.</p>
-            </div>
-                 <div class="code-block-container">
-                    <pre><code>
-                        # Laplacian Pyramid Blending (Burt & Adelson style) using Gaussian/Laplacian stacks
-                        import cv2
-                        import matplotlib.pyplot as plt
-                        import numpy as np
-                        
-                        path = r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 2\ass2 part 2 images"
-                        img1 = cv2.imread(path + r"\burt_apple.png")
-                        img2 = cv2.imread(path + r"\burt_orange.png")
-                        
-                        img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-                        img2 = cv2.cvtColor(img2, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-                        
-                        if img1.shape != img2.shape:
-                            img2 = cv2.resize(img2, (img1.shape[1], img1.shape[0]))
-                        
-                        h, w = img1.shape[:2]
-                        
-                        mask = np.zeros((h, w), dtype=np.float32)
-                        mask[:, :w // 2] = 1.0
-                        
-                        
-                        def build_gaussian_stack(image, num_levels=5, base_sigma=2.0):
-                            stack = [image.copy()]
-                            for i in range(1, num_levels):
-                                sigma = base_sigma * (2 ** (i - 1))
-                                stack.append(cv2.GaussianBlur(image, (0, 0), sigmaX=sigma, sigmaY=sigma))
-                            return stack
-                        
-                        
-                        def build_laplacian_stack(g_stack):
-                            stack = [g_stack[i] - g_stack[i + 1] for i in range(len(g_stack) - 1)]
-                            stack.append(g_stack[-1])
-                            return stack
-                        
-                        
-                        num_levels = 5
-                        base_sigma = 2.0
-                        
-                        g1 = build_gaussian_stack(img1, num_levels, base_sigma)
-                        g2 = build_gaussian_stack(img2, num_levels, base_sigma)
-                        gm = build_gaussian_stack(mask, num_levels, base_sigma)
-                        
-                        l1 = build_laplacian_stack(g1)
-                        l2 = build_laplacian_stack(g2)
-                        
-                        apple_contribs, orange_contribs, blended_stack = [], [], []
-                        for a, o, m in zip(l1, l2, gm):
-                            m3 = np.dstack([m, m, m])
-                            ac = m3 * a
-                            oc = (1.0 - m3) * o
-                            apple_contribs.append(ac)
-                            orange_contribs.append(oc)
-                            blended_stack.append(ac + oc)
-                        
-                        assert np.allclose(sum(l1), img1, atol=1e-4)
-                        assert np.allclose(sum(l2), img2, atol=1e-4)
-                        
-                        blend = np.clip(np.sum(blended_stack, axis=0), 0, 1)
-                        
-                        
-                        def to_display(img, gain, is_residual):
-                            if is_residual:
-                                return np.clip(img, 0, 1)
-                            return np.clip(0.5 + gain * img, 0, 1)
-                        
-                        
-                        levels_to_show = [0, 2, 4]
-                        row_labels = ["High frequency\n(level 0)", "Medium frequency\n(level 2)", "Low frequency\n(level 4)"]
-                        col_labels = ["Apple (weighted)", "Orange (weighted)", "Combined"]
-                        
-                        fig, axes = plt.subplots(3, 3, figsize=(9, 9))
-                        fig.subplots_adjust(left=0.14, right=0.99, top=0.94, bottom=0.01, wspace=0.03, hspace=0.03)
-                        
-                        for r, lvl in enumerate(levels_to_show):
-                            is_res = (lvl == num_levels - 1)
-                            peak = max(np.percentile(np.abs(x[lvl]), 99.5)
-                                       for x in (apple_contribs, orange_contribs, blended_stack))
-                            gain = 0.5 / max(peak, 1e-6)
-                        
-                            for c, stack in enumerate((apple_contribs, orange_contribs, blended_stack)):
-                                ax = axes[r, c]
-                                ax.imshow(to_display(stack[lvl], gain, is_res))
-                                ax.set_xticks([])
-                                ax.set_yticks([])
-                                for spine in ax.spines.values():
-                                    spine.set_visible(False)
-                                if r == 0:
-                                    ax.set_title(col_labels[c], fontsize=10)
-                                if c == 0:
-                                    ax.set_ylabel(row_labels[r], fontsize=10)
-                        
-                        plt.show()
-                        
-                        fig2, ax2 = plt.subplots(1, 3, figsize=(10, 4))
-                        for ax, im, t in zip(ax2, (img1, img2, blend), ("Apple", "Orange", "Blended")):
-                            ax.imshow(im)
-                            ax.set_title(t, fontsize=10)
-                            ax.axis("off")
-                        plt.tight_layout()
-                        plt.show()
-                    </code></pre>
-                </div>
-                <p class="section-desc">Below are the results of the above code on the burt apple and burt orange images. Additionally, I applied the same code to the Einstein and Merilyn Monroe images as well.</p>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img32.PNG" alt="img32">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img33.PNG" alt="img33">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img34.PNG" alt="img34">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img35.PNG" alt="img35">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img36.PNG" alt="img36">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img37.PNG" alt="img37">
-                    </div>
-                </div>
-                 <div class="image-grid">
-                    <div class="image-card">
-                        <img src="blog _pics\img38.PNG" alt="img38">
-                    </div>
-                </div>
-            </div>
-     </div> 
+     			</div> 
         </div>
     </main>
 </html>
