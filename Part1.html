@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SYDE 671 Assignment 3 - Blog</title>
     <link rel="stylesheet" href="style.css">
+    <style>
+        .section-desc {
+            text-align: left;
+        }
+    </style>
 </head>
 <body>
 
@@ -21,7 +26,7 @@
     <main>
         <div class="card">
             <h1 style="text-align: center;">SYDE 671 Assignment 3 Review</h1>
-            <p>In this blog we will be reviewing the concepts from assignment 3. Assignment 3 focuses on image blending and stitiching multiple photographs to create one larger composite photograph. 
+            <p style="text-align: left;">In this blog we will be reviewing the concepts from assignment 3. Assignment 3 focuses on image blending and stitiching multiple photographs to create one larger composite photograph. 
  </p>
             
             <!-- SECTION 1: INTRODUCTION TO CONVOLUTION -->
@@ -269,7 +274,7 @@
 	<div class="card">
 		<p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
 		After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
-		arrays in my code.</p
+		arrays in my code.</p>
 		<p class="section-desc">The computeH function then takes the arrays as input and calculates the homography matrix taking the cordinate arrays as the input.
 		The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
 		coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
@@ -299,7 +304,7 @@
 		<p class="section-desc">
 		The warpImageBilinear function does the same inverse warping as the warpImageNearestNeighbor function but where it difers is how
 		it samples the color values, insted of rounding to the closest pixel it takes a weighted average of four surrounding pixel neighbors 
-		across each color channel leading to a smooth boundary gradient instead of sharp boundaries avoiding jagged edges.</
+		across each color channel leading to a smooth boundary gradient instead of sharp boundaries avoiding jagged edges.
 		</p>
 		
 		<div class="image-grid">
@@ -309,7 +314,7 @@
 		</div>
 		<p class="section-desc">In the image above, I have selected the 4 corners of the source image and the target image, both in
 		clockwise order to ensure that pixels from the source are corresponding to the same locations on the target image.
-		In the bottom two images, I have the two warped images from the NearestNeighbor and the Billienear functions shown.
+		In the bottom two images, I have the two warped images from the NearestNeighbor and the Billienear functions shown.</p>
 		<p class="section-desc">
 		The results of both the functions seem to have produced visibly identical results in this instance. The billinear function
 		took a little longer to process the image than nearest neighbor function and the processing time would likely increase with 
@@ -421,6 +426,32 @@
 			</div>
 	</div>
 	<p class="section-desc">In the above image we revisit the chessboard.</p>
+	
+	<!-- Mosaicing -->
+	<div class="section-block">
+		<h2 class="section-title">Section 2: Image Blending and Mosaicing</h2>
+		<p class="section-desc">Now that we have ractified that our program accurately warps the images, we now proceed to the next step.
+		I will now stitch together multiple images to create one composite image. I use a set of 3 images in an urban setting and warp the images
+		using the middle image as the reference image since it contains overlapping features from the left and right images.
+		For each image, I choose different correspondance points that are common with midle reference image. The images I used to create the
+		mosaic and the final mosaic is shown below. For correspondance points I used pixpy andmanually input the cordinates as arrays.</p>
+		<div class="image-grid">
+			<div class="image-card">
+					<img src="images\a.jpg" alt="img8">
+			</div>
+			<div class="image-card">
+					<img src="images\b.jpg" alt="img8">
+			</div>
+			<div class="image-card">
+					<img src="images\c.jpg" alt="img8">
+			</div>
+		</div>
+		<div class="image-grid">
+			<div class="image-card">
+					<img src="images\manual mosaic.PNG" alt="img8">
+			</div>
+	</div>
+	</div>
 									
 					 </div>       
             	</div>
