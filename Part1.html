@@ -325,7 +325,9 @@
 						<img src="images\playground warped.PNG" alt="img3">
 				</div>
 		</div>
-		<p class="section-desc">
+		<p class="section-desc"> In this example, I took two photos of the playground from different distances and angles and warp them using
+			both, bilinear and nearest neighbor, methods. For points of correspondances I choose the 4 points around the playground sandbox.
+			The results for both the methods look almost idetical.
 		</p>
 		<div class="image-grid">
 				<div class="image-card">
@@ -337,8 +339,9 @@
 						<img src="images\orangetree warped.PNG" alt="img5">
 				</div>
 		</div>
-		<p class="section-desc">
-			
+		<p class="section-desc">In this example, I have chosen a view with trees and buildings behind the tress. I took both images
+			from different angles and for points of corresponace I chose the corners of one of the buildings. Again the results of both the
+			interpolation methods look very similar.
 		</p>
 		<div class="image-grid">
 				<div class="image-card">
@@ -350,66 +353,68 @@
 						<img src="images\window warped.PNG" alt="img7">
 				</div>
 		</div>
-		<p class="section-desc">
+		<p class="section-desc">The previous two photos didn't have any prominient feature to use to form a quadrilateral for corespondance
+			so in this image I used a window and took images from the left and right of it. Again, the results of the inerpolations
+			look identical.
 		</p>
 		   
 	</div>		
-								<div class="code-block-container">
-										<pre><code>
-												# Rectification
-												import numpy as np
-												import cv2
-												import matplotlib.pyplot as plt
-												
-												img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\window 2.jpeg")
-												img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
-												
-												pts1 = np.array([[244, 694],[621, 737],[649, 966],[234, 966]], dtype=np.float64)
-												
-												width, height = 400, 400
-												pts2 = np.array([
-														[0, 0],         
-														[width, 0],       
-														[width, height],  
-														[0, height]       
-												], dtype=np.float64)
-												
-												H_recovered = computeH(pts1, pts2)
-												
-												im_warped, alpha = warpImageBilinear(img1, H_recovered)
-												
-												fig, axes = plt.subplots(1, 2, figsize=(14, 7))
-												
-												axes[0].imshow(img1)
-												axes[0].scatter(pts1[:, 0], pts1[:, 1], color='red', s=80, marker='o')
-												axes[0].set_title("Input Image with Selected Points")
-												axes[0].axis('off')
-												
-												axes[1].imshow(im_warped)
-												axes[1].set_title("Rectified Surface")
-												axes[1].axis('off')
-												
-												plt.tight_layout()
-												plt.show()
-										</code></pre>
-								</div>
-								<p class="section-desc">To verify if my warping program works as expected so far, I ractified using a single image
-										with a rectangular object of interest and ran it with our compute function to check if the image is warped to focus in on
-										our object of interest and turn into a front facing image. 
+	<div class="code-block-container">
+			<pre><code>
+					# Rectification
+					import numpy as np
+					import cv2
+					import matplotlib.pyplot as plt
+					
+					img1 = cv2.imread(r"C:\Users\Muhammad Muneeb\Desktop\Documents\Masters\SYDE 671\Assignment 3\images\window 2.jpeg")
+					img1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+					
+					pts1 = np.array([[244, 694],[621, 737],[649, 966],[234, 966]], dtype=np.float64)
+					
+					width, height = 400, 400
+					pts2 = np.array([
+							[0, 0],         
+							[width, 0],       
+							[width, height],  
+							[0, height]       
+					], dtype=np.float64)
+					
+					H_recovered = computeH(pts1, pts2)
+					
+					im_warped, alpha = warpImageBilinear(img1, H_recovered)
+					
+					fig, axes = plt.subplots(1, 2, figsize=(14, 7))
+					
+					axes[0].imshow(img1)
+					axes[0].scatter(pts1[:, 0], pts1[:, 1], color='red', s=80, marker='o')
+					axes[0].set_title("Input Image with Selected Points")
+					axes[0].axis('off')
+					
+					axes[1].imshow(im_warped)
+					axes[1].set_title("Rectified Surface")
+					axes[1].axis('off')
+					
+					plt.tight_layout()
+					plt.show()
+			</code></pre>
+	</div>
+	<p class="section-desc">To verify if my warping program works as expected so far, I ractified using a single image
+			with a rectangular object of interest and ran it with our compute function to check if the image is warped to focus in on
+			our object of interest and turn into a front facing image. 
 
-										The ractification takes manually input cordinates of the object of interest and then creates a flat canvas size based on
-										the input cordinates, calclates the homography, performs inversion and warps the image to make object of inerest from slanted 
-										to flat front facing image. Below are some examples on actual images using the above code.
-								</p>
-								
-								<div class="image-grid">
-										<div class="image-card">
-												<img src="images\window ractified.png" alt="img4">
-										</div>
-								</div>
-								<p class="section-desc">In the above image you can see that the window in the original image was captured with the
-								camera positioned to the left of the window. our ractification function has correctly warpe the image so that it becomes flat
-								and seems as if the camera was placed directly in front of it.</p>
+			The ractification takes manually input cordinates of the object of interest and then creates a flat canvas size based on
+			the input cordinates, calclates the homography, performs inversion and warps the image to make object of inerest from slanted 
+			to flat front facing image. Below are some examples on actual images using the above code.
+	</p>
+	
+	<div class="image-grid">
+			<div class="image-card">
+					<img src="images\window ractified.png" alt="img4">
+			</div>
+	</div>
+	<p class="section-desc">In the above image you can see that the window in the original image was captured with the
+	camera positioned to the left of the window. our ractification function has correctly warpe the image so that it becomes flat
+	and seems as if the camera was placed directly in front of it.</p>
 						 </div>
                         
             </div>
