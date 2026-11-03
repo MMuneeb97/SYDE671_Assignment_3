@@ -277,29 +277,29 @@
 		Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
 		least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
 		a 3 x 3 matrix format and scales it by its bottom-right element such that magnitude of H equals 1, before returning the final
-		homography matrix.
-
+		homography matrix.</p>
+		<p class="section-desc">
 		The get_bounding_box function then calculates the spatial boundaries of the warped image taking the source image dimensions
 		and homography matrix as input. First, the function projects the four literal corner coordinates of the source image using 
 		the homography matrix and normalizes them by their homogeneous scale factor. 
 		Next, it combines these transformed coordinates with the original image bounds and computes the minimum and maximum spatial 
 		extents using floor and ceil operations. Finally, it applies safety clamps to prevent runaway memory allocation and 
-		returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.
-
+		returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.</p>
+		<p class="section-desc">
 		Now that I have homography matrix and the size of the canvas for my final warped image I will create the final warped image
 		by transforming the source image using the homography matrix and mapping it onto the destination image. I use two different methods
-		and compare how each method affects the processing time and the final result of warping.
-
+		and compare how each method affects the processing time and the final result of warping.</p>
+		<p class="section-desc">
 		The warpImageNearestNeighbor function performs inverse warping taking the source image and homography matrix as input. 
 		First, it determines the output canvas dimensions and generates a grid of destination pixel coordinates, which it maps 
 		back to floating-point source coordinates using the inverse homography matrix and homogeneous division. 
 		Next, it rounds these source coordinates to the nearest integer pixel index and applies a validity mask to 
 		filter out-of-bounds locations. Finally, it samples the color values directly from the single nearest neighbor at 
-		the clamped indices across all channels, returning the warped image along with a binary alpha mask.
-
+		the clamped indices across all channels, returning the warped image along with a binary alpha mask.</p>
+		<p class="section-desc">
 		The warpImageBilinear function does the same inverse warping as the warpImageNearestNeighbor function but where it difers is how
 		it samples the color values, insted of rounding to the closest pixel it takes a weighted average of four surrounding pixel neighbors 
-		across each color channel leading to a smooth boundary gradient instead of sharp boundaries avoiding jagged edges.
+		across each color channel leading to a smooth boundary gradient instead of sharp boundaries avoiding jagged edges.</
 		</p>
 		
 		<div class="image-grid">
@@ -310,11 +310,11 @@
 		<p class="section-desc">In the image above, I have selected the 4 corners of the source image and the target image, both in
 		clockwise order to ensure that pixels from the source are corresponding to the same locations on the target image.
 		In the bottom two images, I have the two warped images from the NearestNeighbor and the Billienear functions shown.
-
+		<p class="section-desc">
 		the results of both the functions seem to have produced visibly identical results in this instance. The billinear function
 		took a little longer to process the image than nearest neighbor function and the processing time would likely increase with 
-		the size and complexity of images.
-		</p>    
+		the size and complexity of images.</p>
+		   
 	</div>		
 								<div class="code-block-container">
 										<pre><code>
