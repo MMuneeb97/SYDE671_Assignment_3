@@ -32,7 +32,7 @@
             <!-- SECTION 1: INTRODUCTION TO CONVOLUTION -->
 <div class="section-block">
 		<h2 class="section-title">Section 1: Homographies, Warping and Mosaicing</h2>
-		<p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the coordinates to warp a source image to a target image. I have chosen few different pairs of images
+		<p class="section-desc">In this section we will look at the fundamentals of masaicing by manually picking the cordinates to warp a source image to a target image. I have chosen few different pairs of images
 		to implement warping on. The first set is the classical chessboard example where we take an image with a chessboard on a 3D plane with background and warp to a target image of chessboard on a 2D plane. 
 		The second example is pictures I took in the park the other day and the third is some pictures I took inside the house. I will discuss why the pictures that I took in the park were not good images to
 		implement image warping on and why the chessboard example works better.</p>
@@ -273,11 +273,11 @@
 </div>
 	<div class="card">
 		<p class="section-desc">I start by importing the images and converting them from the default BGR format to RGB format.
-		After loading the images, I use pixpy to get the coordinates for the source and target images to create the homographies with and manually input them as
+		After loading the images, I use pixpy to get the cordinates for the source and target images to create the homographies with and manually input them as
 		arrays in my code.</p>
 		<p class="section-desc">The computeH function then takes the arrays as input and calculates the homography matrix taking the cordinate arrays as the input.
 		The first check the function does is to check for the number of cordinate pairs in the arrays, if there are less than four 
-		coordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
+		cordinate pairs in either of the arrays, it gives an error. The function then uses Direct Linear Transformation (DLT)
 		to create matrix A of size 2N X 9. Where each point correspondence contributes to two rows of linear equations representing
 		Ah = 0. Then the function then factorizes the matri using the Singular Value Decomposition (SVD) and identifies the optimal
 		least-squares solution which forms the parameters of the homography matrix. Finally, the function reshapes the vector into
@@ -287,7 +287,7 @@
 		The get_bounding_box function then calculates the spatial boundaries of the warped image taking the source image dimensions
 		and homography matrix as input. First, the function projects the four literal corner coordinates of the source image using 
 		the homography matrix and normalizes them by their homogeneous scale factor. 
-		Next, it combines these transformed coordinates with the original image bounds and computes the minimum and maximum spatial 
+		Next, it combines these transformed cordinates with the original image bounds and computes the minimum and maximum spatial 
 		extents using floor and ceil operations. Finally, it applies safety clamps to prevent runaway memory allocation and 
 		returns the integer canvas boundaries (x_min, x_max, y_min, y_max) required to properly size the output warping grid.</p>
 		<p class="section-desc">
@@ -448,7 +448,7 @@
 		<p class="section-desc">In the previous iteration I manually input the correspondance cordinates to create the mosaic.
 		The warpImageBiliniearWithCanvas function calculates the weights of each image and uses distance transforms to generate a
 		smooth alpha mask for the borders. I then implement the actual image blending directly in the main accumulation loop by
-		transforming each image onto the global coordinate canvas, summing their weighted RGB values and mask them together.
+		transforming each image onto the global cordinate canvas, summing their weighted RGB values and mask them together.
 		Finally, dividin the acumulated color grid by the total alpha weight normalizes the oerlapping regions, stitiching the 
 		three photographs together.
 		</p>
@@ -761,6 +761,23 @@ plt.show()
 		The RANSAC (Random Sample Consensus) samples random subsets of 4 point correspondences, computes a trial homography matrix 
 		using, and counts how many total matching points agree with that model within a pixel error threshold. 
 		The model with the highest number of consistent inliers is selected as the optimal homography.
+		</p>
+		<p class="section-desc">
+		Comparing the results of the manual mosaic and the automated mosaic it is clear that manual mosaic produced better results
+		since I picked points at distinct sharp corners where there were antural boundaries, such as roof and trees or the edge of a
+		building and also spaced the correspondance points further apart from each other to ensure sufficient overlap between images. 
+		</p>
+		<p class="section-desc">
+		Harris corner detector concentrated matches on a very small, localized cluster (mostly clustered on the distant apartment building facade 
+		shown in the top match visualizations), leaving large portions of the image unconstrained. Simple normalized intensity patches combined with Lowe's ratio test are sensitive to repetitive textures (like windows on high-rise apartment blocks). 
+		This causes incorrect cross-matches that slip past the RANSAC threshold if the initial point pool lacks good geometric spread.
+		When point correspondences are clustered in a small region rather than spread across the image plane, the resulting homography matrix becomes ill-conditioned. 
+		Small pixel noise leads to massive angular distortions when projected across the wider canvas
+		</p>
+		<p class="section-desc">
+		In order to improve the results for the automated pipeline, instead of the Harris corner detection we can use other corner
+		detection methods that space out the correspondance points evenly throughout the image. Lowering the RANSAC reprojection
+		error threshold can further help improve the results.
 		</p>
 	</div>									
 					 </div>       
